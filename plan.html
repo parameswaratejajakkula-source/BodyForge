@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My Smart Plan - Body Forge AI</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Segoe UI,Arial,sans-serif;background:#0f1115;color:#eee;padding:16px}
+.wrap{max-width:900px;margin:auto}h1{text-align:center;color:#ff5722}h2{color:#ff8a50;margin-top:0}
+.card{background:#1a1d24;border-radius:14px;padding:18px;margin:14px 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+.day{background:#232733;border-radius:10px;padding:12px}.day b{color:#ff8a50}.rest{opacity:.55}
+.stat{background:#232733;border-radius:10px;padding:12px;text-align:center}.stat b{display:block;font-size:22px;color:#ff8a50}
+button,a.btn{background:#ff5722;color:#fff;border:0;border-radius:10px;padding:10px 14px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-block;margin:4px 4px 0 0;font-size:14px}
+li{margin:5px 0}.note{opacity:.7;font-size:13px}
+@media print{button,a.btn{display:none}body{background:#fff;color:#000}.card,.day,.stat{background:#fff;border:1px solid #ccc}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>✨ My Smart Plan</h1>
+<div class="card" id="empty" style="display:none">No profile yet. <a class="btn" href="profile.html">Create profile</a></div>
+<div id="content" style="display:none">
+ <div class="card"><h2>📊 Your numbers</h2><div class="grid" id="stats"></div></div>
+ <div class="card"><h2>🏋️ Weekly workout</h2><div class="grid" id="week"></div></div>
+ <div class="card"><h2>🥗 Daily meals</h2><div id="meals"></div></div>
+ <div class="card"><h2>💡 Tips</h2><ul id="tips"></ul></div>
+ <div class="card" id="aiCard"><h2>🤖 AI coach notes</h2><div id="aiText" class="note">Add an API key for a personalised written plan review.</div>
+  <button id="aiBtn">Get AI review</button></div>
+</div>
+<div class="card"><h2>💾 Your data</h2>
+ <p class="note">Everything is stored only in this browser. Export a backup so you never lose it.</p>
+ <button id="exp">Export backup</button>
+ <button onclick="document.getElementById('imp').click()">Import backup</button>
+ <input type="file" id="imp" accept=".json" style="display:none">
+ <button onclick="window.print()">Print / Save PDF</button>
+ <button id="clr" style="background:#555">Clear all data</button>
+</div>
+<a class="btn" href="dashboard.html">⬅ Dashboard</a>
+</div>
+<script type="module">
+import "./bf-db.js";
+import "./bf-ai.js";
+const profile = await window.BF.getUserProfile();
+const plan = BFAI.makePlan(profile);
+if (!plan) document.getElementById("empty").style.display = "block";
+else {
+  document.getElementById("content").style.display = "block";
+  const m = plan.metrics;
+  document.getElementById("stats").innerHTML = [["BMI", m.bmi + " (" + m.category + ")"], ["Maintenance", m.tdee + " kcal"], ["Target", m.calories + " kcal"], ["Protein", m.protein + " g"], ["Healthy weight", m.healthyMin + "-" + m.healthyMax + " kg"]].map(x => `<div class="stat"><b>${x[1]}</b>${x[0]}</div>`).join("");
+  document.getElementById("week").innerHTML = plan.week.map(d => d.ex.length ? `<div class="day"><b>${d.day} - ${d.title}</b><ul>${d.ex.map(e => "<li>" + e + "</li>").join("")}</ul><div class="note">${d.cardio}</div></div>` : `<div class="day rest"><b>${d.day}</b><br>${d.title}</div>`).join("");
+  document.getElementById("meals").innerHTML = plan.meals.map(x => `<div class="day" style="margin:8px 0"><b>${x.meal}</b> - ${x.kcal} kcal, ${x.protein} g protein<br>${x.text}</div>`).join("");
+  document.getElementById("tips").innerHTML = plan.tips.map(t => "<li>" + t + "</li>").join("");
+  await window.BF.savePlan("smart", { workout: plan.week, meals: plan.meals });
+  document.getElementById("aiBtn").onclick = async () => {
+    if (!BFAI.hasKey() && !BFAI.promptKey()) return;
+    const out = document.getElementById("aiText"); out.textContent = "Thinking...";
+    try {
+      out.innerHTML = BFAI.fmt(await BFAI.ask([{ role: "user", content: "Review this weekly plan for me and suggest 3 improvements, briefly:\n" + JSON.stringify({ week: plan.week.map(d => d.day + ": " + d.title), meals: plan.meals.map(x => x.meal + " " + x.kcal + "kcal") }) }], BFAI.systemPrompt(profile), 500));
+    } catch (e) { out.textContent = "AI unavailable (check your key / internet). Your offline plan above still works."; }
+  };
+}
+document.getElementById("exp").onclick = () => {
+  const data = {}; for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k.startsWith("bodyForce") || k === "bodyImage") data[k] = localStorage.getItem(k); }
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: "application/json" })); a.download = "body-forge-backup.json"; a.click();
+};
+document.getElementById("imp").onchange = e => {
+  const f = e.target.files[0]; if (!f) return; const r = new FileReader();
+  r.onload = () => { try { const d = JSON.parse(r.result); Object.keys(d).filter(k => k.startsWith("bodyForce") || k === "bodyImage").forEach(k => localStorage.setItem(k, d[k])); alert("Backup restored"); location.reload(); } catch (x) { alert("Invalid backup file"); } };
+  r.readAsText(f);
+};
+document.getElementById("clr").onclick = () => { if (confirm("Delete all Body Forge data in this browser?")) { Object.keys(localStorage).filter(k => k.startsWith("bodyForce") || k === "bodyImage").forEach(k => localStorage.removeItem(k)); location.reload(); } };
+</script>
+</body>
+</html>
